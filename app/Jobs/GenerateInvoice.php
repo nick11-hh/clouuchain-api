@@ -22,6 +22,7 @@ use App\Models\InvoiceRecords;
 use App\Models\Order;
 use App\Models\BalanceRecharge;
 use App\Models\RechargeApply;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -190,7 +191,7 @@ class GenerateInvoice implements ShouldQueue
             'invoice_no' => $record['invoice_no'],
             'created_at' => date("Y-m-d", strtotime($record['created_at'])),
             'client_menu_logo' => $logo ?: '',
-            'seller_info' => $this->normalizeSellerInfo($this->adminInfo['invoice_info'] ?? ''),
+            'seller_info' => $this->buildSellerInfoFromSysUser($this->adminInfo),
             'buyer_info' => $this->buildBuyerInfo($customData),
         ];
 
@@ -427,6 +428,29 @@ class GenerateInvoice implements ShouldQueue
             return ['-'];
         }
         return array_values($parts);
+    }
+
+    private function buildSellerInfoFromSysUser(array $adminInfo): array
+    {
+        $userId = isset($adminInfo['id']) ? (int)$adminInfo['id'] : 0;
+        if ($userId > 0) {
+            try {
+                $user = DB::table('sys_user')
+                    ->select(['username', 'invoice_info'])
+                    ->where('id', $userId)
+                    ->where('deleted', 0)
+                    ->first();
+                if (!empty($user)) {
+                    $raw = trim((string)($user->username ?? '') . PHP_EOL . (string)($user->invoice_info ?? ''));
+                    return $this->normalizeSellerInfo($raw);
+                }
+            } catch (\Throwable $e) {
+                info('从sys_user获取发票抬头失败，使用回退数据', ['user_id' => $userId, 'msg' => $e->getMessage()]);
+            }
+        }
+
+        $raw = trim((string)($adminInfo['username'] ?? '') . PHP_EOL . (string)($adminInfo['invoice_info'] ?? ''));
+        return $this->normalizeSellerInfo($raw);
     }
 
     private function buildBuyerInfo(Custom $customData): array
