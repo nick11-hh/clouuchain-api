@@ -104,6 +104,31 @@ class InvoiceController extends Controller
     }
 
     /**
+     * 下载发票压缩包
+     *
+     * @param Request $request
+     * @return array|\Illuminate\Http\JsonResponse
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    public function requestInvoiceZip(Request $request)
+    {
+        $params = $request->all();
+
+        validator($params, [
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|min:1',
+        ], [
+            'ids.required' => '请选择发票记录',
+        ])->validate();
+
+        if (!$this->service->requestInvoiceZip($params)) {
+            throw new AccidentException('发票压缩包申请失败，请重试', Code::OPERATE_FAIL);
+        }
+
+        return ApiResponseService::successMessage('发票压缩包申请成功，请稍后在发票管理页面下载');
+    }
+
+    /**
      * 更新发票模板
      *
      * @param Request $request

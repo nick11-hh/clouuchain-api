@@ -24,6 +24,7 @@ class ExcelExport extends Model
     public const TYPE_CREDIT_CARD_RECHARGE_RECORD = 23; //导出信用卡充值记录
 
     public const TYPE_STOCK_REPORT = 24; // 导出备货报表
+    public const TYPE_INVOICE_ZIP = 99; // 发票压缩包导出
     public const STATUS_EXPORTING = 0; //导出中
     public const STATUS_DONE = 1; //导出完成
     public const STATUS_FAILED = 2; //导出失败

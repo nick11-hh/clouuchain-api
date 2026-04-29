@@ -6,10 +6,12 @@ use App\Jobs\GenerateInvoice;
 use App\Lib\Code;
 use App\Models\Admin;
 use App\Models\CreditCardRechargeRecord;
+use App\Models\ExcelExport;
 use App\Models\InvoiceRecords;
 use App\Models\Order;
 use App\Models\BalanceRecharge;
 use App\Models\RechargeApply;
+use App\Jobs\Export\InvoiceZipExport;
 use App\Services\Client\BaseService;
 use App\Services\Traits\InvoiceTrait;
 use Illuminate\Http\Request;
@@ -240,6 +242,46 @@ class InvoiceService extends BaseService
             'type.required' => '请选择发票来源',
             'ids.required' => '请选择要生成发票的记录',
         ];
+    }
+
+    /**
+     * 申请发票压缩包下载
+     *
+     * @param array $params
+     * @return bool
+     */
+    public function requestInvoiceZip(array $params): bool
+    {
+        $ids = array_values(array_unique(array_map('intval', $params['ids'] ?? [])));
+        if (empty($ids)) {
+            throw new AccidentException('请选择要下载的发票记录', Code::OPERATE_FAIL);
+        }
+
+        $records = InvoiceRecords::query()
+            ->whereIn('id', $ids)
+            ->get(['id', 'invoice_no', 'status', 'storage_url']);
+
+        if ($records->count() !== count($ids)) {
+            throw new AccidentException('部分发票记录不存在，请刷新后重试', Code::OPERATE_FAIL);
+        }
+
+        foreach ($records as $record) {
+            if ((int)$record->status !== InvoiceRecords::NORMAL_STATUS) {
+                throw new AccidentException('发票状态异常，请稍后再试：' . $record->invoice_no, Code::OPERATE_FAIL);
+            }
+        }
+
+        $fileName = 'CompressionPackage_' . now()->format('YmdHis') . '.zip';
+        $excelExport = ExcelExport::query()->create([
+            'type' => ExcelExport::TYPE_INVOICE_ZIP,
+            'name' => $fileName,
+            'url' => '',
+            'status' => ExcelExport::STATUS_EXPORTING,
+        ]);
+
+        dispatch(new InvoiceZipExport($excelExport, $records->pluck('id')->toArray()));
+
+        return true;
     }
 
     /**
