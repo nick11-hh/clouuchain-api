@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exceptions\AccidentException;
 use App\Http\Controllers\Controller;
+use App\Lib\Code;
 use App\Services\Admin\InvoiceService;
 use Illuminate\Http\Request;
 use App\Services\ApiResponseService;
@@ -99,5 +101,59 @@ class InvoiceController extends Controller
             return ApiResponseService::successMessage('发票申请成功，请稍后在发票管理页面下载');
         }
         return ApiResponseService::errorMessage('发票申请失败，请重试');
+    }
+
+    /**
+     * 更新发票模板
+     *
+     * @param Request $request
+     * @return array|\Illuminate\Http\JsonResponse
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    public function invoiceTemplate(Request $request)
+    {
+        $params = $request->all();
+        $params['customer_id'] = $params['customer_id'] ?? $params['customerId'] ?? null;
+        $params['order_mode'] = $params['order_mode'] ?? $params['orderMode'] ?? null;
+
+        validator($params, [
+            'customer_id' => 'required|integer|min:1',
+            'order_mode' => 'required',
+            'template' => 'required|array|min:1',
+            'template.*' => 'integer|min:1',
+        ], [
+            'customer_id.required' => '请选择客户',
+            'order_mode.required' => '请选择模板模式',
+            'template.required' => '请选择模板字段',
+        ])->validate();
+
+        if (!$this->service->invoiceTemplate($params)) {
+            throw new AccidentException('发票模板申请失败，请重试', Code::OPERATE_FAIL);
+        }
+
+        return ApiResponseService::successMessage('发票模板更新成功');
+    }
+
+    /**
+     * 查看发票模板
+     *
+     * @param mixed $orderMode
+     * @return array
+     */
+    public function invoiceTemplateGet($orderMode): array
+    {
+        return ApiResponseService::success($this->service->invoiceTemplateGet($orderMode));
+    }
+
+    /**
+     * 查看被选中的发票模板
+     *
+     * @param mixed $orderMode
+     * @param int $customerId
+     * @return array
+     */
+    public function invoiceTemplateGetChecked($orderMode, int $customerId): array
+    {
+        return ApiResponseService::success($this->service->invoiceTemplateGetChecked($orderMode, $customerId));
     }
 }

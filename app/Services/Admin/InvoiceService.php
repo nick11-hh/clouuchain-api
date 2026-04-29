@@ -14,6 +14,7 @@ use App\Services\Client\BaseService;
 use App\Services\Traits\InvoiceTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2022_04\Balance;
 use App\Exceptions\AccidentException;
 
@@ -239,5 +240,175 @@ class InvoiceService extends BaseService
             'type.required' => '请选择发票来源',
             'ids.required' => '请选择要生成发票的记录',
         ];
+    }
+
+    /**
+     * 更新发票模板
+     *
+     * @param array $params
+     * @return bool
+     */
+    public function invoiceTemplate(array $params): bool
+    {
+        $customerId = (int)($params['customer_id'] ?? 0);
+        $orderMode = $this->normalizeOrderMode($params['order_mode'] ?? false);
+        $template = $params['template'] ?? [];
+        $result = 0;
+
+        if ($customerId <= 0 || empty($template)) {
+            return false;
+        }
+
+        DB::beginTransaction();
+        try {
+            DB::table('dsp_custom_invoice_style')
+                ->where('custom_id', $customerId)
+                ->where('order_mode', $orderMode)
+                ->whereNull('delete_time')
+                ->update([
+                    'delete_time' => now()->toDateTimeString(),
+                    'updated_at' => now()->toDateTimeString(),
+                ]);
+
+            foreach ($template as $labelId) {
+                $inserted = DB::table('dsp_custom_invoice_style')->insert([
+                    'custom_id' => $customerId,
+                    'order_mode' => $orderMode,
+                    'label_id' => (int)$labelId,
+                    'created_at' => now()->toDateTimeString(),
+                    'updated_at' => now()->toDateTimeString(),
+                ]);
+
+                if ($inserted) {
+                    $result++;
+                }
+            }
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::warning('更新发票模板失败', [
+                'message' => $e->getMessage(),
+                'customer_id' => $customerId,
+                'order_mode' => $orderMode,
+            ]);
+            return false;
+        }
+
+        return $result > 0;
+    }
+
+    /**
+     * 查看发票模板
+     *
+     * @param mixed $orderMode
+     * @return array
+     */
+    public function invoiceTemplateGet($orderMode): array
+    {
+        $orderMode = $this->normalizeOrderMode($orderMode);
+
+        try {
+            $labels = DB::table('dsp_invoice_style_label')
+                ->where('order_mode', $orderMode)
+                ->orderBy('id')
+                ->get(['id', 'name']);
+
+            if ($labels->isNotEmpty()) {
+                return $labels->map(function ($item) {
+                    return [
+                        'label' => $item->name,
+                        'value' => (int)$item->id,
+                    ];
+                })->values()->toArray();
+            }
+        } catch (\Throwable $e) {
+            Log::warning('查询发票模板失败，返回默认模板', [
+                'message' => $e->getMessage(),
+                'order_mode' => $orderMode,
+            ]);
+        }
+
+        return $this->getDefaultInvoiceTemplate($orderMode);
+    }
+
+    /**
+     * 查看被选中的发票模板
+     *
+     * @param mixed $orderMode
+     * @param int $customerId
+     * @return array
+     */
+    public function invoiceTemplateGetChecked($orderMode, int $customerId): array
+    {
+        $orderMode = $this->normalizeOrderMode($orderMode);
+
+        try {
+            $ids = DB::table('dsp_custom_invoice_style')
+                ->where('custom_id', $customerId)
+                ->where('order_mode', $orderMode)
+                ->whereNull('delete_time')
+                ->orderBy('id')
+                ->pluck('label_id')
+                ->map(fn ($id) => (int)$id)
+                ->toArray();
+
+            if (!empty($ids)) {
+                return $ids;
+            }
+        } catch (\Throwable $e) {
+            Log::warning('查询已选发票模板失败，返回默认选中项', [
+                'message' => $e->getMessage(),
+                'customer_id' => $customerId,
+                'order_mode' => $orderMode,
+            ]);
+        }
+
+        return [1, 2, 3, 4, 5, 6];
+    }
+
+    /**
+     * 获取默认发票模板
+     *
+     * @param bool $orderMode
+     * @return array
+     */
+    protected function getDefaultInvoiceTemplate(bool $orderMode): array
+    {
+        if ($orderMode) {
+            return [
+                ['label' => 'platformNo', 'value' => 1],
+                ['label' => 'productName', 'value' => 2],
+                ['label' => 'sku', 'value' => 3],
+                ['label' => 'count', 'value' => 4],
+                ['label' => 'country', 'value' => 5],
+                ['label' => 'amount', 'value' => 6],
+                ['label' => 'paymentTime', 'value' => 7],
+                ['label' => 'platformOrderNumber', 'value' => 8],
+                ['label' => 'systemOrderNumber', 'value' => 9],
+                ['label' => 'createTime', 'value' => 10],
+            ];
+        }
+
+        return [
+            ['label' => 'data', 'value' => 1],
+            ['label' => 'paymentStyle', 'value' => 2],
+            ['label' => 'serialId', 'value' => 3],
+            ['label' => 'amount', 'value' => 4],
+        ];
+    }
+
+    /**
+     * 兼容路径参数中的布尔值
+     *
+     * @param mixed $orderMode
+     * @return bool
+     */
+    protected function normalizeOrderMode($orderMode): bool
+    {
+        if (is_bool($orderMode)) {
+            return $orderMode;
+        }
+
+        return in_array(strtolower((string)$orderMode), ['1', 'true', 'yes', 'on'], true);
     }
 }
