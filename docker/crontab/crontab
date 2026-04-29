@@ -1,0 +1,1 @@
+* * * * * www-data cd /var/www/html/dsp_api && /usr/local/bin/php artisan schedule:run
