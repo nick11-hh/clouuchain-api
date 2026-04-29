@@ -1049,6 +1049,9 @@ Route::namespace('Admin')->middleware('tenant')->group(function () {
             Route::put('/{id}', [\App\Http\Controllers\Admin\InvoiceController::class, 'update'])->where(['id' => '[0-9]+']); //更新发票信息
             Route::get('/source_type', [\App\Http\Controllers\Admin\InvoiceController::class, 'getSourceTypeList']); //获取来源类型
             Route::post('/request', [\App\Http\Controllers\Admin\InvoiceController::class, 'requestInvoice']); //申请发票
+            Route::post('/invoiceTemplate', [\App\Http\Controllers\Admin\InvoiceController::class, 'invoiceTemplate']); //更新发票模板
+            Route::get('/invoiceTemplateGet/{orderMode}', [\App\Http\Controllers\Admin\InvoiceController::class, 'invoiceTemplateGet']); //查看发票模板
+            Route::get('/invoiceTemplateGetChecked/{orderMode}/{customerId}', [\App\Http\Controllers\Admin\InvoiceController::class, 'invoiceTemplateGetChecked']); //查看被选中的发票模板
         });
 
         Route::prefix('charge-type')->group(function () {
