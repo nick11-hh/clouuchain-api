@@ -758,6 +758,52 @@ class GenerateInvoice implements ShouldQueue
         return (string)($row[$fieldName] ?? '');
     }
 
+    private function wordFontByField(string $fieldName): array
+    {
+        if (in_array($fieldName, ['platformNo', 'serialId'], true)) {
+            return ['name' => 'SimSun', 'bold' => true, 'size' => 14];
+        }
+        if (in_array($fieldName, ['paymentTime', 'platformOrderNumber', 'systemOrderNumber', 'createTime', 'date'], true)) {
+            return ['name' => 'Arial', 'bold' => true, 'size' => 12];
+        }
+        return ['name' => 'SimSun', 'bold' => false, 'size' => 11];
+    }
+
+    private function insertWordInvoiceTable(PhpWord $phpword, \PhpOffice\PhpWord\Element\Section $section, array $rows, array $headerColumns): void
+    {
+        $styleName = 'invoiceTableExcelLike';
+        $phpword->addTableStyle($styleName, [
+            'borderSize' => 6,
+            'borderColor' => 'DDDDDD',
+            'cellMargin' => 80,
+            'width' => 9072,
+            'unit' => 'dxa',
+        ]);
+        $table = $section->addTable($styleName);
+        $columnCount = max(1, count($headerColumns));
+        $cellWidth = (int)floor(9072 / $columnCount);
+
+        $table->addRow();
+        foreach ($headerColumns as $column) {
+            $table->addCell($cellWidth, ['bgColor' => 'FFC0CB'])
+                ->addText((string)$column['displayName'], ['name' => 'Arial', 'bold' => true, 'size' => 11]);
+        }
+
+        foreach ($rows as $row) {
+            $table->addRow();
+            foreach ($headerColumns as $column) {
+                $fieldName = (string)$column['fieldName'];
+                $font = $this->wordFontByField($fieldName);
+                $table->addCell($cellWidth)->addText(
+                    $this->rowValueByField($row, $fieldName),
+                    ['name' => $font['name'], 'bold' => $font['bold'], 'size' => $font['size']]
+                );
+            }
+        }
+
+        $section->addText('');
+    }
+
     private function resolveLogoLocalPath(string $logoUrl): ?string
     {
         if ($logoUrl === '') {
@@ -866,30 +912,8 @@ class GenerateInvoice implements ShouldQueue
                 $section->addText($line, ['name' => 'Arial', 'size' => 11]);
             }
 
-            $tableStyle = [
-                'borderSize' => 6,
-                'borderColor' => '999999',
-                'cellMargin' => 80,
-            ];
-            $phpword->addTableStyle('invoiceTable', $tableStyle);
-            $table = $section->addTable('invoiceTable');
-            $cellWidth = max(1200, (int)floor(9000 / max(1, count($headerColumns))));
+            $this->insertWordInvoiceTable($phpword, $section, $rows, $headerColumns);
 
-            $table->addRow();
-            foreach ($headerColumns as $column) {
-                $cell = $table->addCell($cellWidth, ['bgColor' => 'FFC0CB']);
-                $cell->addText($column['displayName'], ['name' => 'Arial', 'bold' => true, 'size' => 11]);
-            }
-
-            foreach ($rows as $row) {
-                $table->addRow();
-                foreach ($headerColumns as $column) {
-                    $value = (string)$this->rowValueByField($row, $column['fieldName']);
-                    $table->addCell($cellWidth)->addText($value, ['name' => 'Arial', 'size' => 10]);
-                }
-            }
-
-            $section->addTextBreak();
             $section->addText('Subtotal: $' . customNumberFormat((float)($data['sub_total'] ?? 0), 2), ['name' => 'Arial', 'bold' => true, 'size' => 12]);
             if (!$orderMode) {
                 $section->addText('Payments: $' . customNumberFormat((float)($data['confirm_payment'] ?? 0), 2), ['name' => 'Arial', 'bold' => true, 'size' => 11]);
