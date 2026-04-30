@@ -50,6 +50,12 @@
         border-bottom: 2px solid #999;
     }
 
+    th, td {
+        padding: 10px;
+        font-size: 10px;
+        vertical-align: middle;
+    }
+
     .text-center {
         text-align: center !important;
     }
@@ -86,6 +92,13 @@
 
     .sku-item div:nth-child(3) {
         width: 100px;
+    }
+
+    .footer-subtotal {
+        text-align: right;
+        margin-top: 10px;
+        font-weight: bold;
+        font-size: 16px;
     }
 </style>
 <div class="box">
@@ -132,65 +145,52 @@
             <div >{{ $data['buyer_info']['invoice_address']['tax'] }}</div>
         @endif
     </div>
-    <!-- 订单记录明细 -->
-    <table style="width: 100%;" cellpadding="6">
+    <!-- 订单记录明细（按Java iText版本动态列） -->
+    <table style="width: 100%;">
         <thead>
         <tr>
-            <th>{{ __('参考编号') }}</th>
-            <th>{{ __('项目') }}</th>
-            <th class="text-center">{{ __('国家') }}</th>
-            <th class="text-center">{{ __('总价') }}</th>
-            <th class="text-center">{{ __('创建时间') }}</th>
+            @foreach(($data['header_columns'] ?? []) as $column)
+                @php
+                    $field = $column['fieldName'] ?? '';
+                    $center = in_array($field, ['sku', 'count', 'country', 'amount', 'paymentTime', 'platformOrderNumber', 'systemOrderNumber', 'createTime'], true);
+                @endphp
+                <th class="{{ $center ? 'text-center' : '' }}">{{ $column['displayName'] ?? '' }}</th>
+            @endforeach
         </tr>
         </thead>
         <tbody>
-        @foreach($data['list'] as $value)
+        @foreach(($data['rows'] ?? []) as $row)
             <tr>
-                <td>
-                    <div>{{ $value['id'] }}</div>
-                    <div>{{ $value['order_sn'] }}</div>
-                </td>
-                <td style="width: 500px">
-                    @foreach($value['sku_list'] as $item)
-                        <div class="sku-item">
-                            <div>SKU：{{ $item['sku_id'] }}</div>
-                            <div>{{ __('单价') }}: ${{ $item['price'] }}</div>
-                            <div>{{ __('数量') }}: {{ $item['quantity'] }}</div>
-                        </div>
-                    @endforeach
-                    <div>
-                        <span>{{ __('物流费') }}: {{ $value['logistics_fee'] > 0 ? '$'. $value['logistics_fee'] : 'Free' }}</span>
-                    </div>
-                    @if($value['other_amount'] > 0)
-                        <div>
-                            <span>{{ __('其他费用') }}: ${{ $value['other_amount'] }}</span>
-                        </div>
+                @foreach(($data['header_columns'] ?? []) as $column)
+                    @php
+                        $field = $column['fieldName'] ?? '';
+                        $value = (string)($row[$field] ?? '');
+                        $center = in_array($field, ['sku', 'count', 'country', 'amount', 'paymentTime', 'platformOrderNumber', 'systemOrderNumber', 'createTime'], true);
+                    @endphp
+                    @if($field === 'productName')
+                        <td style="width: 500px">
+                            @foreach(explode("\n", $value) as $line)
+                                @if($line !== '')
+                                    <div>{{ $line }}</div>
+                                @endif
+                            @endforeach
+                        </td>
+                    @else
+                        <td class="{{ $center ? 'text-center' : '' }}">
+                            @foreach(explode("\n", $value) as $line)
+                                @if($line !== '')
+                                    <div>{{ $line }}</div>
+                                @endif
+                            @endforeach
+                        </td>
                     @endif
-                    @if($value['additional_amount'] > 0)
-                        <div>
-                            <span>{{ __('额外费用') }}: ${{ $value['additional_amount'] }}</span>
-                        </div>
-                    @endif
-                    @if($value['discount_amount'] > 0)
-                        <div>
-                            <span>{{ __('优惠金额') }}: $ -{{ $value['discount_amount'] }}</span>
-                        </div>
-                    @endif
-                    @if($value['refund_amount'] > 0)
-                        <div>
-                            <span>{{ __('退款金额') }}: $ -{{ $value['refund_amount'] }}</span>
-                        </div>
-                    @endif
-                </td>
-                <td class="text-center">{{ $value['country_code'] }}</td>
-                <td class="text-center">${{ $value['sub_total'] }}</td>
-                <td class="text-center">{{ $value['created_at'] }}</td>
+                @endforeach
             </tr>
         @endforeach
         </tbody>
     </table>
-    <div style="text-align: right;margin-top: 5px;">
-        <div><span class="sub-total">{{ __('小计') }}</span> ${{ $data['sub_total'] }}</div>
+    <div class="footer-subtotal">
+        <span>Subtotal</span> ${{ $data['sub_total'] }}
     </div>
 </div>
 <script>

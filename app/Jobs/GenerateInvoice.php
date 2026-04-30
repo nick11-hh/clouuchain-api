@@ -591,6 +591,57 @@ class GenerateInvoice implements ShouldQueue
         return $columns;
     }
 
+    private function buildPdfHeaderColumns(array $checkConfig, bool $orderMode): array
+    {
+        $columns = [];
+        if ($orderMode) {
+            if ($checkConfig['platformNo'] ?? true) {
+                $columns[] = ['fieldName' => 'platformNo', 'displayName' => 'Platform No'];
+            }
+            if ($checkConfig['productName'] ?? true) {
+                $columns[] = ['fieldName' => 'productName', 'displayName' => 'Product Name'];
+            }
+            if ($checkConfig['sku'] ?? true) {
+                $columns[] = ['fieldName' => 'sku', 'displayName' => 'Sku'];
+            }
+            if ($checkConfig['count'] ?? true) {
+                $columns[] = ['fieldName' => 'count', 'displayName' => 'Count'];
+            }
+            if ($checkConfig['country'] ?? true) {
+                $columns[] = ['fieldName' => 'country', 'displayName' => 'Shipping Country'];
+            }
+            if ($checkConfig['amount'] ?? true) {
+                $columns[] = ['fieldName' => 'amount', 'displayName' => 'Price（$）'];
+            }
+            if ($checkConfig['paymentTime'] ?? true) {
+                $columns[] = ['fieldName' => 'paymentTime', 'displayName' => 'Payment Time'];
+            }
+            if ($checkConfig['platformOrderNumber'] ?? false) {
+                $columns[] = ['fieldName' => 'platformOrderNumber', 'displayName' => 'Platform Order Number'];
+            }
+            if ($checkConfig['systemOrderNumber'] ?? false) {
+                $columns[] = ['fieldName' => 'systemOrderNumber', 'displayName' => 'System Order Number'];
+            }
+            if ($checkConfig['createTime'] ?? false) {
+                $columns[] = ['fieldName' => 'createTime', 'displayName' => 'Create Time'];
+            }
+        } else {
+            if ($checkConfig['serialId'] ?? true) {
+                $columns[] = ['fieldName' => 'serialId', 'displayName' => 'Transaction ID'];
+            }
+            if ($checkConfig['paymentStyle'] ?? true) {
+                $columns[] = ['fieldName' => 'paymentStyle', 'displayName' => 'Payment Method'];
+            }
+            if ($checkConfig['amount'] ?? true) {
+                $columns[] = ['fieldName' => 'amount', 'displayName' => 'Amount'];
+            }
+            if ($checkConfig['date'] ?? true) {
+                $columns[] = ['fieldName' => 'date', 'displayName' => 'Date'];
+            }
+        }
+        return $columns;
+    }
+
     private function coord(int $columnIndex, int $rowIndex): string
     {
         return Coordinate::stringFromColumnIndex($columnIndex + 1) . ($rowIndex + 1);
@@ -845,11 +896,19 @@ class GenerateInvoice implements ShouldQueue
         $savePath = '/invoice/' . $filename;
 
         try {
+            $orderMode = (int)$this->record['source_type'] === InvoiceRecords::TYPE_ORDER;
+            $checkConfig = $this->getDefaultCheckConfig($orderMode);
+            $pdfData = $data;
+            $pdfData['header_columns'] = $this->buildPdfHeaderColumns($checkConfig, $orderMode);
+            $pdfData['rows'] = $orderMode
+                ? $this->buildOrderRowsForExport($data['list'] ?? [])
+                : $this->buildRechargeRowsForExport($data['list'] ?? []);
+
             Storage::disk('admin_public')->makeDirectory('invoice');
             $filePath = Storage::disk('admin_public')->path($savePath);
 
             \PDF::loadView(
-                'invoice.' . ($this->record['source_type'] == InvoiceRecords::TYPE_ORDER ? 'order' : 'recharge'), ['data' => $data]
+                'invoice.' . ($orderMode ? 'order' : 'recharge'), ['data' => $pdfData]
             )->setOptions([
                 'dpi' => 300,
                 'margin-top' => 10,

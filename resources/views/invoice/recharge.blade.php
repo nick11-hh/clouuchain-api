@@ -54,6 +54,11 @@
         -webkit-box-align: center;
         -webkit-box-pack: justify;
     }
+    .amount-line {
+        font-size: 16px;
+        font-weight: bold;
+        margin-top: 6px;
+    }
 </style>
 <div class="box">
     <div class="logo">
@@ -87,32 +92,44 @@
     <table style="width: 100%;" cellpadding="6">
         <thead>
         <tr>
-            <th>Date</th>
-            <th>Payment Method</th>
-            <th class="text-center">Transaction ID</th>
-            <th class="text-center">Amount</th>
+            @foreach(($data['header_columns'] ?? []) as $hc)
+                @php
+                    $field = $hc['fieldName'] ?? '';
+                    $center = in_array($field, ['serialId', 'amount'], true);
+                @endphp
+                <th class="{{ $center ? 'text-center' : '' }}">{{ $hc['displayName'] }}</th>
+            @endforeach
         </tr>
         </thead>
         <tbody>
-        @foreach($data['list'] as $value)
-        <tr>
-            <td>
-                {{ $value['create_date'] }}
-            </td>
-            <td>
-                {{ $value['payment_method'] }}
-            </td>
-            <td class="text-center">{{ $value['transaction_id'] }}</td>
-            <td class="text-center">${{ $value['amount'] }}</td>
-        </tr>
+        @foreach(($data['rows'] ?? []) as $row)
+            <tr>
+                @foreach(($data['header_columns'] ?? []) as $hc)
+                    @php
+                        $field = $hc['fieldName'] ?? '';
+                        $cell = (string)($row[$field] ?? '');
+                        $fontStyle = 'font-family: SimSun; font-size: 11px;';
+                        $alignClass = '';
+                        if ($field === 'date') {
+                            $fontStyle = 'font-family: Arial; font-size: 12px; font-weight: bold;';
+                        } elseif ($field === 'serialId') {
+                            $fontStyle = 'font-family: SimSun; font-size: 14px; font-weight: bold;';
+                            $alignClass = 'text-center';
+                        } elseif ($field === 'amount') {
+                            $cell = '$' . $cell;
+                            $alignClass = 'text-center';
+                        }
+                    @endphp
+                    <td class="{{ $alignClass }}" style="{{ $fontStyle }}">{{ $cell }}</td>
+                @endforeach
+            </tr>
         @endforeach
         </tbody>
     </table>
     <div style="text-align: right;margin-top: 5px;">
-        <div><span class="sub-total">Subtotal</span> ${{ $data['sub_total'] }}</div>
-        <div><span class="sub-total">Payments</span> ${{ $data['confirm_payment'] }}</div>
-        <div><span class="sub-total">Credit</span> ${{ $data['buyer_info']['residual_credit'] }}</div>
-        <div><span class="sub-total">Outstanding Amount</span> ${{ bcsub($data['buyer_info']['credit_line'], $data['buyer_info']['residual_credit'], 2) }}</div>
+        <div class="amount-line">Subtotal ${{ $data['sub_total'] }}</div>
+        <div class="amount-line">Payments ${{ $data['confirm_payment'] }}</div>
+        <div class="amount-line">Credit ${{ $data['buyer_info']['residual_credit'] }}</div>
     </div>
 </div>
 <script>
