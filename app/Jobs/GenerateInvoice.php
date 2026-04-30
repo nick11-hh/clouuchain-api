@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
@@ -559,7 +560,7 @@ class GenerateInvoice implements ShouldQueue
                 $columns[] = ['fieldName' => 'country', 'displayName' => 'Shipping Country'];
             }
             if ($checkConfig['amount'] ?? true) {
-                $columns[] = ['fieldName' => 'amount', 'displayName' => 'Price($)'];
+                $columns[] = ['fieldName' => 'amount', 'displayName' => 'Price（$）'];
             }
             if ($checkConfig['paymentTime'] ?? true) {
                 $columns[] = ['fieldName' => 'paymentTime', 'displayName' => 'Payment Time'];
@@ -575,19 +576,83 @@ class GenerateInvoice implements ShouldQueue
             }
         } else {
             if ($checkConfig['serialId'] ?? true) {
-                $columns[] = ['fieldName' => 'serialId', 'displayName' => 'Serial ID'];
+                $columns[] = ['fieldName' => 'serialId', 'displayName' => 'serialId'];
             }
             if ($checkConfig['paymentStyle'] ?? true) {
-                $columns[] = ['fieldName' => 'paymentStyle', 'displayName' => 'Payment Method'];
+                $columns[] = ['fieldName' => 'paymentStyle', 'displayName' => 'paymentStyle'];
             }
             if ($checkConfig['amount'] ?? true) {
-                $columns[] = ['fieldName' => 'amount', 'displayName' => 'Amount'];
+                $columns[] = ['fieldName' => 'amount', 'displayName' => 'amount'];
             }
             if ($checkConfig['date'] ?? true) {
-                $columns[] = ['fieldName' => 'date', 'displayName' => 'Date'];
+                $columns[] = ['fieldName' => 'date', 'displayName' => 'date'];
             }
         }
         return $columns;
+    }
+
+    private function coord(int $columnIndex, int $rowIndex): string
+    {
+        return Coordinate::stringFromColumnIndex($columnIndex + 1) . ($rowIndex + 1);
+    }
+
+    private function applyStyleByArray(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, string $cell, array $style): void
+    {
+        $sheet->getStyle($cell)->applyFromArray($style);
+    }
+
+    private function invoiceDataStyle(string $fontName = 'Arial', bool $bold = false, int $size = 11): array
+    {
+        return [
+            'font' => ['name' => $fontName, 'bold' => $bold, 'size' => $size],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_LEFT,
+                'vertical' => Alignment::VERTICAL_CENTER,
+                'wrapText' => true,
+            ],
+        ];
+    }
+
+    private function invoiceHeaderStyle(): array
+    {
+        return [
+            'font' => ['bold' => true, 'name' => 'Arial', 'size' => 11],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => 'FFC0CB'],
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_LEFT,
+                'vertical' => Alignment::VERTICAL_CENTER,
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color' => ['rgb' => 'DDDDDD'],
+                ],
+            ],
+        ];
+    }
+
+    private function invoiceTotalStyle(): array
+    {
+        return [
+            'font' => ['bold' => true, 'name' => 'Arial', 'size' => 11],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => 'FFE5EC'],
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_LEFT,
+                'vertical' => Alignment::VERTICAL_CENTER,
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                    'color' => ['rgb' => 'DDDDDD'],
+                ],
+            ],
+        ];
     }
 
     private function buildOrderRowsForExport(array $list): array
@@ -865,106 +930,144 @@ class GenerateInvoice implements ShouldQueue
 
             $spreadsheet = new Spreadsheet();
             $sheet = $spreadsheet->getActiveSheet();
-            $sheet->setTitle('Invoice');
+            $sheet->setTitle('Images');
             $spreadsheet->getDefaultStyle()->getFont()->setName('Arial')->setSize(11);
+            $rowNum = 1; // 与Java逻辑一致，按0基行号推进
 
-            $tmpLogoPath = $this->resolveLogoLocalPath((string)($data['client_menu_logo'] ?? ''));
+            $tmpLogoPath = $this->resolveLogoLocalPath('https://juanxiaochi.oss-us-east-1.aliyuncs.com/template/Mate_Platform/invoice_icon.jpg');
             if ($tmpLogoPath !== null && is_file($tmpLogoPath)) {
+                $sheet->getRowDimension(1)->setRowHeight(40);
                 $drawing = new Drawing();
                 $drawing->setPath($tmpLogoPath);
                 $drawing->setCoordinates('A1');
+                $drawing->setWidth(380);
                 $drawing->setHeight(40);
                 $drawing->setWorksheet($sheet);
             }
 
-            $sheet->setCellValue('A1', 'INVOICE');
-            $sheet->setCellValue('A2', 'No.' . ($data['invoice_no'] ?? ''));
-            $sheet->setCellValue('A3', 'Issued ' . ($data['created_at'] ?? ''));
-            $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(20);
-
-            $sheet->setCellValue('A5', 'Seller');
-            $sheet->getStyle('A5')->getFont()->setBold(true)->setSize(14);
             $sellerRows = $data['seller_info'] ?? ['-'];
-            $sheet->setCellValue('A6', (string)($sellerRows[0] ?? '-'));
-            if (!empty($sellerRows[1])) {
-                $sheet->setCellValue('A7', (string)$sellerRows[1]);
-            }
+            $buyerInfo = $data['buyer_info'] ?? [];
+            $invoiceDateInt = (int)str_replace('-', '', (string)($data['created_at'] ?? date('Y-m-d')));
 
-            $sheet->setCellValue('A9', 'Bill To');
-            $sheet->getStyle('A9')->getFont()->setBold(true)->setSize(14);
-            $billTo = $orderMode ? $this->buildOrderBillToText($data['buyer_info'] ?? []) : $this->buildRechargeBillToText($data['buyer_info'] ?? []);
-            $sheet->setCellValue('A10', $billTo);
-            $sheet->getStyle('A10')->getAlignment()->setWrapText(true);
+            // 第2行空行
+            $rowNum++;
 
-            $headerRow = 12;
+            // 第3行公司名
+            $companyNameCell = $this->coord(0, $rowNum++);
+            $sheet->setCellValue($companyNameCell, (string)($sellerRows[0] ?? '-'));
+            $this->applyStyleByArray($sheet, $companyNameCell, $this->invoiceDataStyle('Arial', true, 11));
+
+            // 第4行公司地址
+            $companyAddressCell = $this->coord(0, $rowNum++);
+            $sheet->setCellValue($companyAddressCell, (string)($sellerRows[1] ?? ''));
+            $this->applyStyleByArray($sheet, $companyAddressCell, $this->invoiceDataStyle('Arial', false, 11));
+
+            // 第5行客户信息标题
+            $billToCell = $this->coord(0, $rowNum);
+            $customerTitleCell = $this->coord(1, $rowNum);
+            $customerNameCell = $this->coord(2, $rowNum++);
+            $sheet->setCellValue($billToCell, 'BILL TO');
+            $sheet->setCellValue($customerTitleCell, '客户店铺名');
+            $sheet->setCellValue($customerNameCell, (string)($buyerInfo['custom_name'] ?? ''));
+            $this->applyStyleByArray($sheet, $billToCell, $this->invoiceDataStyle('Arial', true, 11));
+            $this->applyStyleByArray($sheet, $customerTitleCell, $this->invoiceDataStyle('SimSun', false, 11));
+
+            // 第6行客户地址和发票日期
+            $customerAddressTitleCell = $this->coord(1, $rowNum);
+            $customerAddressCell = $this->coord(2, $rowNum);
+            $invoiceDateTitleCell = $this->coord(4, $rowNum);
+            $invoiceDateCell = $this->coord(5, $rowNum++);
+            $sheet->setCellValue($customerAddressTitleCell, '客户地址');
+            $sheet->setCellValue($customerAddressCell, (string)($buyerInfo['custom_address'] ?? ''));
+            $sheet->setCellValue($invoiceDateTitleCell, 'INVOICE DATE');
+            $sheet->setCellValue($invoiceDateCell, $invoiceDateInt);
+            $this->applyStyleByArray($sheet, $customerAddressTitleCell, $this->invoiceDataStyle('SimSun', false, 11));
+            $this->applyStyleByArray($sheet, $invoiceDateTitleCell, $this->invoiceDataStyle('Arial', true, 11));
+            $this->applyStyleByArray($sheet, $invoiceDateCell, $this->invoiceDataStyle('Arial', false, 11));
+
+            // 第7行空行
+            $rowNum++;
+
+            // 第8行表头
+            $headerStyle = $this->invoiceHeaderStyle();
+            $headerRowIndex = $rowNum++;
             foreach ($headerColumns as $index => $column) {
-                $columnLetter = Coordinate::stringFromColumnIndex($index + 1);
-                $sheet->setCellValue($columnLetter . $headerRow, $column['displayName']);
+                $cell = $this->coord($index, $headerRowIndex);
+                $sheet->setCellValue($cell, $column['displayName']);
+                $this->applyStyleByArray($sheet, $cell, $headerStyle);
             }
 
-            $lastColumnLetter = Coordinate::stringFromColumnIndex(max(1, count($headerColumns)));
-            $headerRange = 'A' . $headerRow . ':' . $lastColumnLetter . $headerRow;
-            $sheet->getStyle($headerRange)->applyFromArray([
-                'font' => ['bold' => true, 'name' => 'Arial', 'size' => 11],
-                'fill' => [
-                    'fillType' => Fill::FILL_SOLID,
-                    'startColor' => ['rgb' => 'FFC0CB'],
-                ],
-                'alignment' => [
-                    'horizontal' => Alignment::HORIZONTAL_LEFT,
-                    'vertical' => Alignment::VERTICAL_CENTER,
-                ],
-                'borders' => [
-                    'allBorders' => [
-                        'borderStyle' => Border::BORDER_THIN,
-                        'color' => ['rgb' => 'DDDDDD'],
-                    ],
-                ],
-            ]);
+            $orderNumberStyle = $this->invoiceDataStyle('SimSun', true, 14);
+            $productStyle = $this->invoiceDataStyle('SimSun', false, 11);
+            $orderTimeStyle = $this->invoiceDataStyle('Arial', true, 12);
 
-            $rowNum = $headerRow + 1;
             foreach ($rows as $row) {
+                $dataRowIndex = $rowNum++;
                 foreach ($headerColumns as $index => $column) {
-                    $columnLetter = Coordinate::stringFromColumnIndex($index + 1);
-                    $value = (string)$this->rowValueByField($row, $column['fieldName']);
-                    $sheet->setCellValueExplicit($columnLetter . $rowNum, $value);
+                    $fieldName = (string)$column['fieldName'];
+                    $cell = $this->coord($index, $dataRowIndex);
+                    $rawValue = $row[$fieldName] ?? '';
+
+                    if (in_array($fieldName, ['count'], true)) {
+                        $sheet->setCellValue($cell, (int)$rawValue);
+                    } elseif (in_array($fieldName, ['amount'], true)) {
+                        $sheet->setCellValue($cell, (float)$rawValue);
+                    } else {
+                        $sheet->setCellValueExplicit($cell, (string)$rawValue, DataType::TYPE_STRING);
+                    }
+
+                    if (in_array($fieldName, ['platformNo', 'serialId'], true)) {
+                        $this->applyStyleByArray($sheet, $cell, $orderNumberStyle);
+                    } elseif (in_array($fieldName, ['productName', 'sku', 'count', 'country', 'amount', 'paymentStyle'], true)) {
+                        $this->applyStyleByArray($sheet, $cell, $productStyle);
+                    } else {
+                        $this->applyStyleByArray($sheet, $cell, $orderTimeStyle);
+                    }
                 }
-                $rowNum++;
             }
 
-            if (!empty($rows)) {
-                $dataRange = 'A' . ($headerRow + 1) . ':' . $lastColumnLetter . ($rowNum - 1);
-                $sheet->getStyle($dataRange)->applyFromArray([
-                    'alignment' => [
-                        'horizontal' => Alignment::HORIZONTAL_LEFT,
-                        'vertical' => Alignment::VERTICAL_CENTER,
-                    ],
-                    'borders' => [
-                        'allBorders' => [
-                            'borderStyle' => Border::BORDER_THIN,
-                            'color' => ['rgb' => 'DDDDDD'],
-                        ],
-                    ],
-                ]);
-            }
-
+            // 总计区域
             $rowNum += 2;
-            $amountColumnIndex = max(1, count($headerColumns));
-            $amountLetter = Coordinate::stringFromColumnIndex($amountColumnIndex);
-            $sheet->setCellValue('A' . $rowNum, 'Subtotal');
-            $sheet->setCellValue($amountLetter . $rowNum, '$' . customNumberFormat((float)($data['sub_total'] ?? 0), 2));
-            $sheet->getStyle('A' . $rowNum . ':' . $amountLetter . $rowNum)->getFont()->setBold(true);
-            if (!$orderMode) {
-                $rowNum++;
-                $sheet->setCellValue('A' . $rowNum, 'Payments');
-                $sheet->setCellValue($amountLetter . $rowNum, '$' . customNumberFormat((float)($data['confirm_payment'] ?? 0), 2));
-                $rowNum++;
-                $sheet->setCellValue('A' . $rowNum, 'Credit');
-                $sheet->setCellValue($amountLetter . $rowNum, '$' . customNumberFormat((float)($data['buyer_info']['residual_credit'] ?? 0), 2));
-            }
+            $subTotal = (float)($data['sub_total'] ?? 0);
+            $lastColumnIndex = max(0, count($headerColumns) - 1);
+            $summaryColumnIndex = count($headerColumns) > 5 ? 5 : $lastColumnIndex;
+            $totalStyle = $this->invoiceTotalStyle();
 
-            for ($i = 1; $i <= max(1, count($headerColumns)); $i++) {
-                $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($i))->setAutoSize(true);
+            $descriptionRowIndex = $rowNum++;
+            $descriptionCell = $this->coord(0, $descriptionRowIndex);
+            $descriptionAmountCell = $this->coord($summaryColumnIndex, $descriptionRowIndex);
+            $sheet->setCellValue($descriptionCell, 'DESCRIPTION');
+            $sheet->setCellValue($descriptionAmountCell, $subTotal);
+            $this->applyStyleByArray($sheet, $descriptionCell, $totalStyle);
+            for ($i = 1; $i <= min(4, $lastColumnIndex); $i++) {
+                $blankCell = $this->coord($i, $descriptionRowIndex);
+                if ($sheet->getCell($blankCell)->getValue() === null) {
+                    $sheet->setCellValue($blankCell, '');
+                }
+                $this->applyStyleByArray($sheet, $blankCell, $totalStyle);
+            }
+            $this->applyStyleByArray($sheet, $descriptionAmountCell, $totalStyle);
+
+            $productFeeStyle = $this->invoiceDataStyle('Arial', false, 11);
+            $fee1Cell = $this->coord(0, $rowNum++);
+            $sheet->setCellValue($fee1Cell, 'Product and fulfillment fee');
+            $this->applyStyleByArray($sheet, $fee1Cell, $productFeeStyle);
+
+            $fee2Cell = $this->coord(0, $rowNum++);
+            $sheet->setCellValue($fee2Cell, 'Service fee');
+            $this->applyStyleByArray($sheet, $fee2Cell, $productFeeStyle);
+
+            $finalTotalStyle = $this->invoiceDataStyle('Arial', false, 11);
+            $totalRowIndex = $rowNum++;
+            $totalCell = $this->coord(0, $totalRowIndex);
+            $totalAmountCell = $this->coord($summaryColumnIndex, $totalRowIndex);
+            $sheet->setCellValue($totalCell, 'TOTAL');
+            $sheet->setCellValue($totalAmountCell, $subTotal);
+            $this->applyStyleByArray($sheet, $totalCell, $finalTotalStyle);
+            $this->applyStyleByArray($sheet, $totalAmountCell, $finalTotalStyle);
+
+            for ($i = 0; $i < count($headerColumns); $i++) {
+                $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($i + 1))->setAutoSize(true);
             }
 
             Storage::disk('admin_public')->makeDirectory('invoice');
